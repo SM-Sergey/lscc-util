@@ -250,10 +250,13 @@ int _tmain(int argc, _TCHAR* argv[])
 	else
 	{
 		// skip to space
-		cmdl = strchr(cmdl+1, '"');
-		if (!cmdl) cmdl = strchr(cmdl+1, '\t');
+		s = strchr(cmdl, ' ');
+		if (!s) s = strchr(cmdl, '\t');
+		if (!s) s = cmdl + strlen(cmdl);
+		cmdl = s;
 	}
-	if (cmdl) 
+
+	if (cmdl && *cmdl) 
 		cmdl++;
 	else {
 		printf("Parser internal error 1\n\r");
