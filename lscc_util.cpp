@@ -21,18 +21,19 @@ char* skipsp(char* s)
 #define NOINC 0x80
 
 // Lattice flash controller commands
-#define IDCODE_PUB        0xE0
-#define UIDCODE_PUB       0x19
-#define ISC_ENABLE_X      0x74
-#define USERCODE          0xC0
-#define ISC_DISABLE       0x26
-#define BYPASS            0xFF
-#define LSC_INIT_ADDR_UFM 0x47
-#define LSC_READ_TAG      0xCA
-#define LSC_ERASE_TAG     0xCB
-#define LSC_CHECK_BUSY    0xF0
-#define LSC_READ_STATUS   0x3C
-#define LSC_PROG_TAG      0xC9
+#define IDCODE_PUB           0xE0
+#define UIDCODE_PUB          0x19
+#define ISC_ENABLE_X         0x74
+#define USERCODE             0xC0
+#define ISC_DISABLE          0x26
+#define BYPASS               0xFF
+#define LSC_INIT_ADDR_UFM    0x47
+#define LSC_READ_TAG         0xCA
+#define LSC_ERASE_TAG        0xCB
+#define LSC_CHECK_BUSY       0xF0
+#define LSC_READ_STATUS      0x3C
+#define LSC_PROG_TAG		 0xC9
+#define ISC_PROGRAM_USERCODE 0xC2
 
 // Global var's
 unsigned char i2c_addr = 0x50;
@@ -115,7 +116,7 @@ int read_usercode (void)
 }
 
 // Read User defaults from FPGA
-int read_userdata (int* flg)
+int read_userdata (void)
 {
 	unsigned char param[4] = {8,0,0,0};
 	unsigned char rdbuf[16];
@@ -138,9 +139,7 @@ int read_userdata (int* flg)
 	param[0] = param[1] = param[2] = 0xFF;
 	flash_control(BYPASS, 3, param, 0, NULL);
 
-	*flg = rdbuf[0] ? TRUE : FALSE;
-
-	return rdbuf[4] | (rdbuf[3] << 8) | (rdbuf[2] << 16) | (rdbuf[1] << 24);
+	return rdbuf[3] | (rdbuf[2] << 8) | (rdbuf[1] << 16) | (rdbuf[0] << 24);
 }
 
 
@@ -172,14 +171,14 @@ int write_userdata (int en, int ud)
 		// Init UFM address
 		flash_control(LSC_INIT_ADDR_UFM, 3, param, 0, NULL);
 		// Write 1 page to UFM
+		ud |= 0x80000000; // Enable defaults bit
 		param[0] = 0x00;
 		param[1] = 0x00;
 		param[2] = 0x01;
-		param[3] = 1;
-		param[4] = (ud >> 24) & 0xFF;
-		param[5] = (ud >> 16) & 0xFF;
-		param[6] = (ud >> 8 ) & 0xFF;
-		param[7] = (ud >> 0 ) & 0xFF;
+		param[3] = (ud >> 24) & 0xFF;
+		param[4] = (ud >> 16) & 0xFF;
+		param[5] = (ud >> 8 ) & 0xFF;
+		param[6] = (ud >> 0 ) & 0xFF;
 		flash_control(LSC_PROG_TAG, 3+16, param, 0, NULL);
 		// wait for busy
 		param[0] = param[1] = param[2] = 0;
@@ -203,6 +202,51 @@ int write_userdata (int en, int ud)
 	return rv;
 }
 
+int write_usercode (int uc)
+{
+	unsigned char param[20] = {8,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
+	unsigned char rdbuf[4];
+	int rv, tm;
+
+	// Enable Flash controller
+	flash_control(ISC_ENABLE_X, 3, param, 0, NULL);
+	// Wait for controller not needed - 5 us guaranteed by SMBus
+	param[0] = 0;
+	tm = GetTickCount();
+	// Write USERCODE
+	uc |= 0x80000000; // Enable defaults bit
+	param[0] = 0x00;
+	param[1] = 0x00;
+	param[2] = 0x00;
+	param[3] = (uc >> 24) & 0xFF;
+	param[4] = (uc >> 16) & 0xFF;
+	param[5] = (uc >> 8 ) & 0xFF;
+	param[6] = (uc >> 0 ) & 0xFF;
+	flash_control(ISC_PROGRAM_USERCODE, 3+4, param, 0, NULL);
+	// wait for busy
+	param[0] = param[1] = param[2] = 0;
+	do {
+		flash_control(LSC_CHECK_BUSY, 3, param, 1, rdbuf);
+	} while (rdbuf[0] & 0x80);
+	tm = GetTickCount()-tm;
+	printf("Write is done in %i ms\n\r", tm);
+	// read status
+	flash_control(LSC_READ_STATUS, 3, param, 4, rdbuf);
+	rv = (rdbuf[2] & 0x20) ? FALSE : TRUE; // FALSE if FAIL
+
+	// Disable Flash controller
+	param[0] = param[1] = param[2] = 0;
+	flash_control(ISC_DISABLE, 3, param, 0, NULL);
+	// "Bypass"
+	param[0] = param[1] = param[2] = 0xFF;
+	flash_control(BYPASS, 3, param, 0, NULL);
+
+	return rv;
+}
+
+
+
+
 /////////////////
 // options table
 static char* opts[] = {
@@ -222,6 +266,7 @@ static char* opts[] = {
 	"-ud",          // 13
 	"-erase_ud",    // 14
 	"-set_ud",      // 15
+	"-set_uc",		// 16
 	NULL
 };
 
@@ -384,17 +429,18 @@ int _tmain(int argc, _TCHAR* argv[])
 				case 14:
 					if (op) err = 6;
 					else {
-						op = i - 8; // 11 => 3; 12 => 4;
+						op = i - 8; // 11 => 3; 12 => 4; ...
 					}
 					break;
 				case 15:
-					// set_ud
+				case 16:
+					// set_ud, set_uc
 					if (!isdigit(*cmdl)) {
 						err = 3;
 						break;
 					}
-					val = strtol(cmdl, &cmdl, 0);
-					op = 7;
+					val = strtoul(cmdl, &cmdl, 0);
+					op = 7 + (i-15); // opcodes 7, 8
 					break;
 				}
 
@@ -443,6 +489,9 @@ int _tmain(int argc, _TCHAR* argv[])
 	if (err)
 		exit(err+1);
 
+	if (!op)
+		exit(0);
+
 	hnd = CH341OpenDevice(0);
 
 	if (hnd != INVALID_HANDLE_VALUE)
@@ -479,6 +528,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			case 5:
 			case 6:
 			case 7:
+			case 8:
 				// read UID // USERCODE // User data // Erase_UD
 				i = read_id();
 				if (i == -1 || !i) {
@@ -499,8 +549,8 @@ int _tmain(int argc, _TCHAR* argv[])
 					break;
 				case 5:
 					// read user defaults
-					i = read_userdata(&b);
-					printf("User defaults %s; data = %08X\n\r", b ? "enabled" : "disabled", i);
+					i = read_userdata();
+					printf("User defaults %s; data = %08X\n\r", (i & 0x80000000) ? "enabled" : "disabled", i);
 					break;
 				case 6:
 					// disable user defaults
@@ -508,9 +558,14 @@ int _tmain(int argc, _TCHAR* argv[])
 					printf("Erasing user data %s\n\r", i ? "successful" : "failed");
 					break;
 				case 7:
-					// disable user defaults
+					// enable and set user defaults
 					i = write_userdata(1,val);
-					printf("Setting user data %s\n\r", i ? "successful" : "failed");
+					printf("Setting user data to 0x%08X %s\n\r", val, i ? "successful" : "failed");
+					break;
+				case 8:
+					// enable and set factory defaults (USERCODE)
+					i = write_usercode(val);
+					printf("Setting USERCODE to 0x%08X %s\n\r", val, i ? "successful" : "failed");
 					break;
 				}				
 				break;
