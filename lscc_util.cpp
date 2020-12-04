@@ -283,6 +283,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	int op = 0;
 	int len, val;
 
+	printf("LSCC control utility v1.0a\n\r\n\r");
+
 	// Command line
 	cmdl = GetCommandLineA();
 
@@ -301,9 +303,9 @@ int _tmain(int argc, _TCHAR* argv[])
 		cmdl = s;
 	}
 
-	if (cmdl && *cmdl) 
-		cmdl++;
-	else {
+	if (cmdl) {
+		if (*cmdl) cmdl++;
+	} else {
 		printf("Parser internal error 1\n\r");
 		exit(1);
 	}
@@ -338,7 +340,6 @@ int _tmain(int argc, _TCHAR* argv[])
 				case 8:
 				case 9:
 				case 10:
-					printf("LSCC control utility v1.0a\n\r\n\r");
 					printf("USAGE: lscc_util <options>\n\r");
 					printf("Generic options:\n\r");
 					printf("  -i <val>, --i2c_addr <val>   - set device address to <val>, by default 0x50\n\r");
@@ -355,7 +356,12 @@ int _tmain(int argc, _TCHAR* argv[])
 					printf("  --ud                         - read user defaults from FPGA\n\r");
 					printf("  --erase_ud                   - erase and disable user defaults in FPGA\n\r");
 					printf("  --set_ud <val>               - erase and enable and set user defaults to <val> in FPGA\n\r");
+					printf("  --set_uc <val>               - Set USERCODE (factory defaults) to <val> in FPGA\n\r");
 
+					printf("\n\r");
+					printf("NOTE: --set_ud and --set_uc commands automatically sets high bit of <val> \n\r");
+					printf("NOTE: this enables applying of these defaults when FPGA initializes\n\r");
+					
 					printf("\n\r");
 					exit(0);
 					break;
@@ -489,8 +495,10 @@ int _tmain(int argc, _TCHAR* argv[])
 	if (err)
 		exit(err+1);
 
-	if (!op)
+	if (!op) {
+		printf("No action given. Please use options (-h for help).\n\r");
 		exit(0);
+	}
 
 	hnd = CH341OpenDevice(0);
 
