@@ -267,6 +267,8 @@ static char* opts[] = {
 	"-erase_ud",    // 14
 	"-set_ud",      // 15
 	"-set_uc",		// 16
+	"n",			// 17
+	"-no_addr",     // 18
 	NULL
 };
 
@@ -282,6 +284,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	int i, l;
 	int op = 0;
 	int len, val;
+	int omit_addr = 0;
 
 	printf("LSCC control utility v1.0a\n\r\n\r");
 
@@ -345,12 +348,15 @@ int _tmain(int argc, _TCHAR* argv[])
 					printf("  -i <val>, --i2c_addr <val>   - set device address to <val>, by default 0x50\n\r");
 					printf("  -a <val>, --addr <val>       - set register address to <val>, by default 0\n\r");
 					printf("\n\r");
-					printf("Actions:\n\r");
+					printf("Generic actions:\n\r");
 					printf("  -h, -?, --help               - display this help\n\r");
 					printf("  -r <len>, --read <len>       - read from device's register[s] <len> bytes\n\r");
 					printf("                                 device and register addresses are set by '-i'/'-a' opts\n\r");
 					printf("  -w <b0> .. <bN>, --write ..  - write to device's register[s] bytes <b0>...<bN>\n\r");
 					printf("                                 device and register addresses are set by '-i'/'-a' opts\n\r");
+					printf("  -n, --no_addr                - Omit address/command phase in read/write commands\n\r");
+					printf("\n\r");
+					printf("Lattice FPGA actions:\n\r");
 					printf("  --uid                        - read UID from FPGA\n\r");
 					printf("  --uc                         - read USERCODE (factory defaults) from FPGA\n\r");
 					printf("  --ud                         - read user defaults from FPGA\n\r");
@@ -448,7 +454,12 @@ int _tmain(int argc, _TCHAR* argv[])
 					val = strtoul(cmdl, &cmdl, 0);
 					op = 7 + (i-15); // opcodes 7, 8
 					break;
+				case 17:
+				case 18:
+					omit_addr = 1;
+					break;
 				}
+
 
 				if (err)
 					break;
@@ -500,6 +511,12 @@ int _tmain(int argc, _TCHAR* argv[])
 		exit(0);
 	}
 
+	if (op > 2 && omit_addr)
+	{
+		printf("Can't omit address/command phase in FPGA commands\n\r");
+		exit(-1);
+	}
+
 	hnd = CH341OpenDevice(0);
 
 	if (hnd != INVALID_HANDLE_VALUE)
@@ -510,7 +527,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			case 1:
 				iobuf[0] = i2c_addr << 1;
 				iobuf[1] = addr;
-				b = CH341StreamI2C(0, 2, iobuf, len, iobuf);
+				b = CH341StreamI2C(0, omit_addr ? 1 : 2, iobuf, len, iobuf);
 				if (!b)
 					printf("SMBus read failed\n\r");
 				else {
@@ -522,7 +539,9 @@ int _tmain(int argc, _TCHAR* argv[])
 			case 2:
 				iobuf[0] = i2c_addr << 1;
 				iobuf[1] = addr;
-				b = CH341StreamI2C(0, 2+len, iobuf, 0, iobuf);
+				if (omit_addr)
+					memmove(&iobuf[1], &iobuf[2], len);
+				b = CH341StreamI2C(0, (omit_addr ? 1 : 2) + len, iobuf, 0, iobuf);
 				if (!b)
 					printf("SMBus write failed\n\r");
 				else {
