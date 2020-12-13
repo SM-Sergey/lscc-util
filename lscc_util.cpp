@@ -275,6 +275,7 @@ static char* opts[] = {
 	"p",			// 22
 	"-perm",		// 23
 	"v",			// 24
+	"-adc",			// 25
 	NULL
 };
 
@@ -296,6 +297,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	int adr_set=0;
 	int verb=0;
 	int dt_val=0, ot_val = 0, oc_val=0;
+	int d[4];
+	double flt;
 
 	printf("LSCC control utility v1.0a\n\r\n\r");
 
@@ -378,11 +381,14 @@ int _tmain(int argc, _TCHAR* argv[])
 					printf("NOTE: --set_ud and --set_uc commands automatically sets high bit of <val> \n\r");
 					printf("NOTE: this enables applying of these defaults when FPGA initializes\n\r");
 					printf("\n\r");
-					printf("DAC actions:\n\r");
+					printf("DAC actions (on GaN module):\n\r");
 					printf("  --dt <ns>                    - set dead time to <ns> ns\n\r");
 					printf("  --ot <temp>                  - set OT level to <temp> Celsius degrees\n\r");
 					printf("  --oc <amps>                  - set OC level to <amps> Amperes\n\r");
 					printf("  -p, --perm                   - update not only current values, and EEPROM also\n\r");
+					printf("\n\r");
+					printf("ADC actions (on GaN module):\n\r");
+					printf("  --adc                        - read ADC and display translated results\n\r");
 					
 					printf("\n\r");
 					exit(0);
@@ -530,6 +536,12 @@ int _tmain(int argc, _TCHAR* argv[])
 					break;
 				case 24:
 					verb = 1;
+					break;
+				case 25: // ADC
+					if (op) err = 6;
+					else {
+						op = 10;
+					}
 					break;
 				}
 
@@ -756,6 +768,8 @@ int _tmain(int argc, _TCHAR* argv[])
 				// Read all
 				iobuf[0] = 1 | (i2c_addr << 1);
 				b = CH341StreamI2C(0, 1, iobuf, 24, iobuf);
+				if (!b)
+					printf("SMBus read failed\n\r");
 
 				b = 0;
 				// verify OC
@@ -783,12 +797,90 @@ int _tmain(int argc, _TCHAR* argv[])
 							b = 1;
 				}
 
+				printf ("Verify %s", b ? "Error" : "OK");
 				if (b || verb) {
-					printf ("Verify error; Readback =");
+					printf ("; Readback =");
 					for (i=0; i<8; i++)
 						printf (" 0x%04X", (iobuf[i*3+1]<<8)|iobuf[i*3+2]); 
-					printf("\r\n");
 				}
+				printf("\r\n");
+				break;
+			case 10:
+				// ADC
+				printf("Reading ADC.\n\r");
+				if (!adr_set) i2c_addr = 0x48;
+
+				iobuf[0] = i2c_addr << 1;
+				iobuf[1] = 0x01;
+				iobuf[2] = 0xC3;
+				iobuf[3] = 0x03;
+				b = CH341StreamI2C(0, 4, iobuf, 0, iobuf);
+				if (!b)
+					printf("SMBus write failed\n\r");
+				Sleep(50);
+				iobuf[0] = i2c_addr << 1;
+				iobuf[1] = 0x00;
+				b = CH341StreamI2C(0, 2, iobuf, 2, iobuf);
+				d[0] = (iobuf[0] << 8) | iobuf[1];
+				if (!b)
+					printf("SMBus read failed\n\r");
+
+				iobuf[0] = i2c_addr << 1;
+				iobuf[1] = 0x01;
+				iobuf[2] = 0xD3;
+				iobuf[3] = 0x03;
+				b = CH341StreamI2C(0, 4, iobuf, 0, iobuf);
+				if (!b)
+					printf("SMBus write failed\n\r");
+				Sleep(50);
+				iobuf[0] = i2c_addr << 1;
+				iobuf[1] = 0x00;
+				b = CH341StreamI2C(0, 2, iobuf, 2, iobuf);
+				d[1] = (iobuf[0] << 8) | iobuf[1];
+				if (!b)
+					printf("SMBus read failed\n\r");
+
+				iobuf[0] = i2c_addr << 1;
+				iobuf[1] = 0x01;
+				iobuf[2] = 0xE3;
+				iobuf[3] = 0x03;
+				b = CH341StreamI2C(0, 4, iobuf, 0, iobuf);
+				if (!b)
+					printf("SMBus write failed\n\r");
+				Sleep(50);
+				iobuf[0] = i2c_addr << 1;
+				iobuf[1] = 0x00;
+				b = CH341StreamI2C(0, 2, iobuf, 2, iobuf);
+				d[2] = (iobuf[0] << 8) | iobuf[1];
+				if (!b)
+					printf("SMBus read failed\n\r");
+
+				iobuf[0] = i2c_addr << 1;
+				iobuf[1] = 0x01;
+				iobuf[2] = 0xF3;
+				iobuf[3] = 0x03;
+				b = CH341StreamI2C(0, 4, iobuf, 0, iobuf);
+				if (!b)
+					printf("SMBus write failed\n\r");
+				Sleep(50);
+				iobuf[0] = i2c_addr << 1;
+				iobuf[1] = 0x00;
+				b = CH341StreamI2C(0, 2, iobuf, 2, iobuf);
+				d[3] = (iobuf[0] << 8) | iobuf[1];
+				if (!b)
+					printf("SMBus read failed\n\r");
+
+				flt = d[0]/32768.0*4.096*12.0;
+				printf("VCC = %.2f V\n\r", flt);
+				flt = d[1]/32768.0*4.096*51.0;
+				printf("PWR = %.2f V\n\r", flt);
+				flt = d[2]/32768.0*4.096/50.0/0.002;
+				printf("I   = %.2f A\n\r", flt);
+				flt = (d[3]/32768.0*4096 - 500.0) / 10.0;
+				printf("T   = %.2f \176C\n\r", flt);
+
+				if (verb)
+					printf("Raw data 0x%04X 0x%04X 0x%04X 0x%04X\n\r", d[0], d[1], d[2], d[3]);
 
 				break;
 		}
