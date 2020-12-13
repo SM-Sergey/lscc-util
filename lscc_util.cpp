@@ -269,6 +269,12 @@ static char* opts[] = {
 	"-set_uc",		// 16
 	"n",			// 17
 	"-no_addr",     // 18
+	"-dt",			// 19
+	"-ot",			// 20
+	"-oc",			// 21
+	"p",			// 22
+	"-perm",		// 23
+	"v",			// 24
 	NULL
 };
 
@@ -285,6 +291,11 @@ int _tmain(int argc, _TCHAR* argv[])
 	int op = 0;
 	int len, val;
 	int omit_addr = 0;
+	int dt=-1, ot=-1, oc=-1;
+	int perm=0;
+	int adr_set=0;
+	int verb=0;
+	int dt_val=0, ot_val = 0, oc_val=0;
 
 	printf("LSCC control utility v1.0a\n\r\n\r");
 
@@ -345,7 +356,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				case 10:
 					printf("USAGE: lscc_util <options>\n\r");
 					printf("Generic options:\n\r");
-					printf("  -i <val>, --i2c_addr <val>   - set device address to <val>, by default 0x50\n\r");
+					printf("  -i <val>, --i2c_addr <val>   - set device address to <val>, by default 0x50 (0x60 for DAC commands)\n\r");
 					printf("  -a <val>, --addr <val>       - set register address to <val>, by default 0\n\r");
 					printf("\n\r");
 					printf("Generic actions:\n\r");
@@ -363,10 +374,15 @@ int _tmain(int argc, _TCHAR* argv[])
 					printf("  --erase_ud                   - erase and disable user defaults in FPGA\n\r");
 					printf("  --set_ud <val>               - erase and enable and set user defaults to <val> in FPGA\n\r");
 					printf("  --set_uc <val>               - Set USERCODE (factory defaults) to <val> in FPGA\n\r");
-
 					printf("\n\r");
 					printf("NOTE: --set_ud and --set_uc commands automatically sets high bit of <val> \n\r");
 					printf("NOTE: this enables applying of these defaults when FPGA initializes\n\r");
+					printf("\n\r");
+					printf("DAC actions:\n\r");
+					printf("  --dt <ns>                    - set dead time to <ns> ns\n\r");
+					printf("  --ot <temp>                  - set OT level to <temp> Celsius degrees\n\r");
+					printf("  --oc <amps>                  - set OC level to <amps> Amperes\n\r");
+					printf("  -p, --perm                   - update not only current values, and EEPROM also\n\r");
 					
 					printf("\n\r");
 					exit(0);
@@ -384,6 +400,7 @@ int _tmain(int argc, _TCHAR* argv[])
 					if (l < 0 || l > 0x7F)
 						err = 4;
 					i2c_addr = l;
+					adr_set = 1;
 					break;
 				case 2:
 				case 3:
@@ -458,8 +475,63 @@ int _tmain(int argc, _TCHAR* argv[])
 				case 18:
 					omit_addr = 1;
 					break;
-				}
 
+				case 19: // DT
+					if (op && op != 9) {
+						err = 6;
+						break;
+					}
+					if (!isdigit(*cmdl)) {
+						err = 3;
+						break;
+					}
+					op = 9;
+					dt = strtoul(cmdl, &cmdl, 0);
+					if (dt < 2 || dt > 20) {
+						err = 9;
+						break;
+					}
+					break;
+				case 20: // OT
+					if (op && op != 9) {
+						err = 6;
+						break;
+					}
+					if (!isdigit(*cmdl)) {
+						err = 3;
+						break;
+					}
+					op = 9;
+					ot = strtoul(cmdl, &cmdl, 0);
+					if (ot < 20 || ot > 125) {
+						err = 10;
+						break;
+					}
+					break;
+				case 21: // OC
+					if (op && op != 9) {
+						err = 6;
+						break;
+					}
+					if (!isdigit(*cmdl)) {
+						err = 3;
+						break;
+					}
+					op = 9;
+					oc = strtoul(cmdl, &cmdl, 0);
+					if (oc < 1 || oc > 32) {
+						err = 11;
+						break;
+					}
+					break;
+				case 22:
+				case 23:
+					perm = 1;
+					break;
+				case 24:
+					verb = 1;
+					break;
+				}
 
 				if (err)
 					break;
@@ -498,6 +570,15 @@ int _tmain(int argc, _TCHAR* argv[])
 	case 8:
 		printf("Data byte out of range\n\r");
 		break;
+	case 9:
+		printf("Dead time should be from 2 to 20 ns\n\r");
+		break;
+	case 10:
+		printf("Temperature should be from 20 to 125 C\n\r");
+		break;
+	case 11:
+		printf("Current should be from 1 to 32 A\n\r");
+		break;
 	default:
 		printf("Parser internal error 2\n\r");
 		break;
@@ -513,8 +594,14 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	if (op > 2 && omit_addr)
 	{
-		printf("Can't omit address/command phase in FPGA commands\n\r");
+		printf("Can't omit address/command phase in non-generic commands\n\r");
 		exit(-1);
+	}
+
+	if (op != 9 && perm)
+	{
+		printf("Permanent option can be applied only to DAC actions\n\r");
+		exit(-2);
 	}
 
 	hnd = CH341OpenDevice(0);
@@ -595,6 +682,114 @@ int _tmain(int argc, _TCHAR* argv[])
 					printf("Setting USERCODE to 0x%08X %s\n\r", val, i ? "successful" : "failed");
 					break;
 				}				
+				break;
+			case 9:
+				printf("Setting DAC to");
+				if (dt >= 0) printf(" DT=%ins", dt);
+				if (ot >= 0) printf(" OT=%i\176C", ot);
+				if (oc >= 0) printf(" OC=%iA", oc);
+				if (perm) printf(" and writing to EEPROM");
+				printf ("\n\r");
+
+				if (!adr_set) i2c_addr = 0x60;
+
+				// DT
+				if (dt >= 0) {
+					dt_val = 3600 - dt*100;
+					dt_val |= 0x8000;
+					if (verb) printf("dt_val = 0x%04X\n\r", dt_val);
+					if (perm) {
+						iobuf[0] = i2c_addr << 1;
+						iobuf[1] = 0x54;
+						iobuf[2] = dt_val >> 8;
+						iobuf[3] = dt_val & 0xFF;
+						iobuf[4] = dt_val >> 8;
+						iobuf[5] = dt_val & 0xFF;
+						b = CH341StreamI2C(0, 6, iobuf, 0, iobuf);
+					} else {
+						iobuf[0] = i2c_addr << 1;
+						iobuf[1] = 0x44;
+						iobuf[2] = dt_val >> 8;
+						iobuf[3] = dt_val & 0xFF;
+						iobuf[4] = 0x46;
+						iobuf[5] = dt_val >> 8;
+						iobuf[6] = dt_val & 0xFF;
+						b = CH341StreamI2C(0, 7, iobuf, 0, iobuf);
+					}
+					if (!b)
+						printf("SMBus write failed\n\r");
+					Sleep(100);
+				}
+
+				// OT
+				if (ot >= 0) {
+					ot_val = 1000 + ot*20;
+					ot_val |= 0x8000;
+					if (verb) printf("ot_val = 0x%04X\n\r", ot_val);
+					iobuf[0] = i2c_addr << 1;
+					iobuf[1] = perm ? 0x52 : 0x42;
+					iobuf[2] = ot_val >> 8;
+					iobuf[3] = ot_val & 0xFF;
+
+					b = CH341StreamI2C(0, 4, iobuf, 0, iobuf);
+					if (!b)
+						printf("SMBus write failed\n\r");
+					Sleep(100);
+				}
+
+				// OC
+				if (oc >= 0) {
+					oc_val = oc*100;
+					oc_val |= 0x9000;
+					if (verb) printf("oc_val = 0x%04X\n\r", oc_val);
+					iobuf[0] = i2c_addr << 1;
+					iobuf[1] = perm ? 0x50 : 0x40;
+					iobuf[2] = oc_val >> 8;
+					iobuf[3] = oc_val & 0xFF;
+
+					b = CH341StreamI2C(0, 4, iobuf, 0, iobuf);
+					if (!b)
+						printf("SMBus write failed\n\r");
+					Sleep(100);
+				}
+
+				// Read all
+				iobuf[0] = 1 | (i2c_addr << 1);
+				b = CH341StreamI2C(0, 1, iobuf, 24, iobuf);
+
+				b = 0;
+				// verify OC
+				if (oc_val) {
+					if (oc_val != ((iobuf[1] << 8) | iobuf[2]))
+						b = 1;
+					if (perm)
+						if (oc_val != ((iobuf[4] << 8) | iobuf[5]))
+							b = 1;
+				}
+				// verify OT
+				if (ot_val) {
+					if (ot_val != ((iobuf[7] << 8) | iobuf[8]))
+						b = 1;
+					if (perm)
+						if (ot_val != ((iobuf[10] << 8) | iobuf[11]) )
+							b = 1;
+				}
+				// verify DT
+				if (dt_val) {
+					if ( (dt_val != ((iobuf[13] << 8) | iobuf[14])) || (dt_val != ((iobuf[19] << 8) | iobuf[20])))
+						b = 1;
+					if (perm)
+						if ( (dt_val != ((iobuf[16] << 8) | iobuf[17])) || (dt_val != ((iobuf[22] << 8) | iobuf[23])))
+							b = 1;
+				}
+
+				if (b || verb) {
+					printf ("Verify error; Readback =");
+					for (i=0; i<8; i++)
+						printf (" 0x%04X", (iobuf[i*3+1]<<8)|iobuf[i*3+2]); 
+					printf("\r\n");
+				}
+
 				break;
 		}
 
