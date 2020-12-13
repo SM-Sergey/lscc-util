@@ -739,7 +739,7 @@ int _tmain(int argc, _TCHAR* argv[])
 					ot_val |= 0x8000;
 					if (verb) printf("ot_val = 0x%04X\n\r", ot_val);
 					iobuf[0] = i2c_addr << 1;
-					iobuf[1] = perm ? 0x52 : 0x42;
+					iobuf[1] = perm ? 0x5A : 0x42;
 					iobuf[2] = ot_val >> 8;
 					iobuf[3] = ot_val & 0xFF;
 
@@ -755,7 +755,7 @@ int _tmain(int argc, _TCHAR* argv[])
 					oc_val |= 0x9000;
 					if (verb) printf("oc_val = 0x%04X\n\r", oc_val);
 					iobuf[0] = i2c_addr << 1;
-					iobuf[1] = perm ? 0x50 : 0x40;
+					iobuf[1] = perm ? 0x58 : 0x40;
 					iobuf[2] = oc_val >> 8;
 					iobuf[3] = oc_val & 0xFF;
 
