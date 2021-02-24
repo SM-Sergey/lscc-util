@@ -276,6 +276,7 @@ static char* opts[] = {
 	"-perm",		// 23
 	"v",			// 24
 	"-adc",			// 25
+	"-test",		// 26
 	NULL
 };
 
@@ -389,6 +390,9 @@ int _tmain(int argc, _TCHAR* argv[])
 					printf("\n\r");
 					printf("ADC actions (on GaN module):\n\r");
 					printf("  --adc                        - read ADC and display translated results\n\r");
+					printf("\n\r");
+					printf("Other actions (on GaN module):\n\r");
+					printf("  --test                       - continuous test of I2C bus (CTRL-C to break)\n\r");
 					
 					printf("\n\r");
 					exit(0);
@@ -541,6 +545,12 @@ int _tmain(int argc, _TCHAR* argv[])
 					if (op) err = 6;
 					else {
 						op = 10;
+					}
+					break;
+				case 26:
+					if (op) err = 6;
+					else {
+						op = 11;
 					}
 					break;
 				}
@@ -881,6 +891,41 @@ int _tmain(int argc, _TCHAR* argv[])
 
 				if (verb)
 					printf("Raw data 0x%04X 0x%04X 0x%04X 0x%04X\n\r", d[0], d[1], d[2], d[3]);
+
+				break;
+			
+			case 11:
+				// I2C test
+				l = 0;
+				while (9) {
+					val = rand() & 0xFF;
+					iobuf[0] = i2c_addr << 1;
+					iobuf[1] = 6;
+					iobuf[2] = val;
+					b = CH341StreamI2C(0, 3, iobuf, 0, iobuf);
+					if (!b) {
+						printf("SMBus write failed\n\r");
+						break;
+					}
+					iobuf[0] = i2c_addr << 1;
+					iobuf[1] = 6+128;
+					b = CH341StreamI2C(0, 2, iobuf, 8, iobuf);
+					if (!b){
+						printf("SMBus read failed\n\r");
+						break;
+					}
+					len = 0;
+					for (i=0; i<8; i++)
+						if (iobuf[i] != val) {
+							printf("\n\r Data Error 0x%02X / 0x%02X \n\r", val, iobuf[i]);
+							len++;
+						}
+					if (len)
+						break;
+					l++;
+					if ((l&255) == 0)
+						printf(".");
+				}
 
 				break;
 		}
