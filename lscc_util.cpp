@@ -904,24 +904,40 @@ int _tmain(int argc, _TCHAR* argv[])
 					iobuf[2] = val;
 					b = CH341StreamI2C(0, 3, iobuf, 0, iobuf);
 					if (!b) {
-						printf("SMBus write failed\n\r");
+						printf("\n\rSMBus write failed\n\r");
 						break;
 					}
+					memset(iobuf,0,sizeof(iobuf));
 					iobuf[0] = i2c_addr << 1;
 					iobuf[1] = 6+128;
 					b = CH341StreamI2C(0, 2, iobuf, 8, iobuf);
 					if (!b){
-						printf("SMBus read failed\n\r");
+						printf("\n\rSMBus read failed\n\r");
 						break;
 					}
 					len = 0;
 					for (i=0; i<8; i++)
 						if (iobuf[i] != val) {
-							printf("\n\r Data Error 0x%02X / 0x%02X \n\r", val, iobuf[i]);
+							printf("\n\rData Error 1 0x%02X / 0x%02X", val, iobuf[i]);
 							len++;
 						}
-					if (len)
+					memset(iobuf,0,sizeof(iobuf));
+					iobuf[0] = i2c_addr << 1;
+					iobuf[1] = 6+128;
+					b = CH341StreamI2C(0, 2, iobuf, 8, iobuf);
+					if (!b){
+						printf("\n\rSMBus read failed\n\r");
 						break;
+					}
+					for (i=0; i<8; i++)
+						if (iobuf[i] != val) {
+							printf("\n\rData Error 2 0x%02X / 0x%02X", val, iobuf[i]);
+							len++;
+						}
+					if (len) {
+						printf("\n\r");
+						break;
+					}
 					l++;
 					if ((l&255) == 0)
 						printf(".");
