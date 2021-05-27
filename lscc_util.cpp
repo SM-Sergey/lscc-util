@@ -84,14 +84,15 @@ int read_id (void)
 }
 
 // Read UID from FPGA
-int read_uid (void)
+unsigned __int64 read_uid (void)
 {
 	unsigned char param[4] = {0,0,0,0};
-	unsigned char rdbuf[4];
+	unsigned char rdbuf[8];
 
-	flash_control(UIDCODE_PUB, 3, param, 4, rdbuf);
+	flash_control(UIDCODE_PUB, 3, param, 8, rdbuf);
 
-	return rdbuf[3] | (rdbuf[2] << 8) | (rdbuf[1] << 16) | (rdbuf[0] << 24);
+	return (unsigned __int64)rdbuf[7] | ((unsigned __int64)rdbuf[6] << 8) | ((unsigned __int64)rdbuf[5] << 16) | ((unsigned __int64)rdbuf[4] << 24) | 
+		((unsigned __int64)rdbuf[3] << 32) | ((unsigned __int64)rdbuf[2] << 40) | ((unsigned __int64)rdbuf[1] << 48) | ((unsigned __int64)rdbuf[0] << 56);
 }
 
 // Read USERCODE from FPGA
@@ -300,6 +301,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	int dt_val=0, ot_val = 0, oc_val=0;
 	int d[4];
 	double flt;
+	unsigned __int64 i64;
 
 	printf("LSCC control utility v1.0a\n\r\n\r");
 
@@ -675,8 +677,8 @@ int _tmain(int argc, _TCHAR* argv[])
 				switch (op) {
 				case 3:
 					// read UID
-					i = read_uid();
-					printf("FPGA UID = %08X\n\r", i);
+					i64 = read_uid();
+					printf("FPGA UID = %08X%08X\n\r", (int)(i64 >> 32), (int)i64);
 					break;
 				case 4:
 					// read USERCODE
